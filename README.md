@@ -54,6 +54,13 @@ Input Directory (input_dir): Contains all .fna or .fasta files you wish to analy
 
 ## Output Directory (output_dir): Where the results will be stored. Each input file will have its own results subdirectory.
 
+---
+
+## Output and Logs
+
+After running the script, the output directory will be organized as follows:
+
+```bash
 ./output_antismash/
 ├── log.txt
 ├── Result_sample1/
@@ -64,8 +71,11 @@ Input Directory (input_dir): Contains all .fna or .fasta files you wish to analy
 │   ├── ... (other output files)
 └── ...
 
- ```shell
- ./run_antismash.py <input_dir> <output_dir> [options] ```
+
+
+```shell
+ ./run_antismash.py <input_dir> <output_dir> [options]
+```
 
 - <input_dir>: Path to the directory containing .fna or .fasta files.
 - <output_dir>: Path to the directory where results will be saved.
