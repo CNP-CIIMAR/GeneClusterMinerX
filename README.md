@@ -3,9 +3,7 @@ ________________________________________________________________________________
 
  - **v 1.0.0: automation of processing of several Genomes fasta/fna files by antismash**
 
-
-
-run_antismash.py
+GeneClusterMineXv1.0.0.py
 
 ## Automated Secondary Metabolite Analysis with antiSMASH
 **run_antismash.py is a Python script designed to streamline the execution of antiSMASH on multiple sequence files (.fna or .fasta) within a directory. The script automates the creation of output directories for each input file, manages detailed logs, and offers flexibility to customize analyses according to user needs.**
@@ -84,7 +82,7 @@ After running the script, the output directory will be organized as follows:
 ## How run antismahs for all tools available:
 
 ```shell
-nohup python ./run_antismash.py ./ ./output_antismash/ --all --cpus 8 --genefinding-tool glimmerhmm  > run_output2.log 3>&1 &
+nohup python ./GeneClusterMineXv1.0.0.py ./ ./output_antismash/ --all --cpus 8 --genefinding-tool glimmerhmm  > run_output2.log 3>&1 &
 ```
 
 
