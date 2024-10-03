@@ -79,7 +79,7 @@ After running the script, the output directory will be organized as follows:
  ./run_antismash.py <input_dir> <output_dir> [options]
 ```
 
-## How run antismahs for all tools available:
+## How to run GeneClusterMinerX for all available tools:
 
 ```shell
 nohup python ./GeneClusterMineXv1.0.0.py ./ ./output_antismash/ --all --cpus 8 --genefinding-tool glimmerhmm  > run_output2.log 3>&1 &
