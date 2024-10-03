@@ -81,6 +81,13 @@ After running the script, the output directory will be organized as follows:
  ./run_antismash.py <input_dir> <output_dir> [options]
 ```
 
+## How run antismahs for all tools available:
+
+```shell
+nohup python ./run_antismash.py ./ ./output_antismash/ --all --cpus 8 --genefinding-tool glimmerhmm  > run_output2.log 3>&1 &
+```
+
+
 - <input_dir>: Path to the directory containing .fna or .fasta files.
 - <output_dir>: Path to the directory where results will be saved.
 
