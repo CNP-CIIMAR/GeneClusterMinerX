@@ -5,7 +5,7 @@
 Autor: Leandro de Mattos Pereira
 Junior Researcher, CNP Laboratory
 Pedro Leao - Team Leader
-Data: Junho, 06, 2023 (Atualizado: Abril, 27, 2024)
+Data: Junho, 06, 2023 (Atualizado: 10 outubro, 2024)
 Descrição: Script para executar antiSMASH em múltiplos arquivos .fna ou .fasta dentro de um diretório,
          gerando um diretório de resultados para cada arquivo de entrada.
 """
