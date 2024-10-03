@@ -1,61 +1,335 @@
-####Autor: Leandro de Mattos Pereira, Junior Researcher 
-######## CNP Laboratory, Pedro Leao - Team Leader - Date: June, 06, 2023
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Autor: Leandro de Mattos Pereira
+Junior Researcher, CNP Laboratory
+Pedro Leao - Team Leader
+Data: Junho, 06, 2023 (Atualizado: Abril, 27, 2024)
+Descrição: Script para executar antiSMASH em múltiplos arquivos .fna ou .fasta dentro de um diretório,
+         gerando um diretório de resultados para cada arquivo de entrada.
+"""
 
 import os
 import shutil
+import argparse
+import subprocess
+from pathlib import Path
+import logging
+import sys
 
-output_dir = "./output_antismash"
-log_file = "log.txt"
+# Diretório de saída e arquivo de log padrão
+DEFAULT_LOG_FILE = "log.txt"
 
-# Verifica se o diretório de saída existe
-if not os.path.exists(output_dir):
-    os.mkdir(output_dir)
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Script para executar antiSMASH em múltiplos arquivos .fna ou .fasta dentro de um diretório com opções personalizadas."
+    )
 
-# Verifica os arquivos já processados
-processed_files = set()
-for result_dir in os.listdir(output_dir):
-    if result_dir.startswith("Result_") and os.path.isdir(os.path.join(output_dir, result_dir)):
-        fasta_file = result_dir.replace("Result_", "")
-        processed_files.add(fasta_file)
+    # Argumentos posicionais
+    parser.add_argument(
+        "input_dir",
+        type=str,
+        help="Diretório contendo arquivos .fna ou .fasta para análise."
+    )
+    parser.add_argument(
+        "output_dir",
+        type=str,
+        help="Diretório onde os resultados serão salvos."
+    )
 
-# Função para salvar as mensagens no arquivo de log
-def save_log(message):
-    with open(log_file, "a") as f:
-        f.write(message + "\n")
+    # Opções de ajuda do antiSMASH
+    parser.add_argument(
+        "--antismash-help",
+        action="store_true",
+        help="Exibe a ajuda do antiSMASH e sai."
+    )
 
-# Processa o arquivo .fna que não foi completamente processado
-for fasta in processed_files:
-    result_dir = os.path.join(output_dir, "Result_" + fasta)
-    index_html_path = os.path.join(result_dir, "index.html")
+    # Opções básicas de análise
+    parser.add_argument(
+        "-t", "--taxon",
+        choices=["bacteria", "fungi"],
+        default="bacteria",
+        help="Classificação taxonômica da sequência de entrada (padrão: bacteria)."
+    )
+    parser.add_argument(
+        "-c", "--cpus",
+        type=int,
+        default=4,  # Valor padrão ajustado para 4, pode ser alterado conforme a necessidade
+        help="Número de CPUs a serem usadas em paralelo (padrão: 4)."
+    )
+    parser.add_argument(
+        "--databases",
+        type=str,
+        default="/home/mattoslmp/anaconda3/envs/antismash/lib/python3.9/site-packages/antismash/databases",
+        help="Diretório raiz das bases de dados usadas pelo antiSMASH."
+    )
 
-    if not os.path.exists(index_html_path):
-        message = f"O arquivo {fasta} foi parcialmente processado anteriormente e o index.html está faltando. Refazendo o processamento."
-        save_log(message)
-        shutil.rmtree(result_dir)  # Remove o diretório
+    # Opções de saída adicionais
+    parser.add_argument(
+        "--output-basename",
+        type=str,
+        help="Nome base para arquivos de saída dentro do diretório de saída."
+    )
+    parser.add_argument(
+        "--html-title",
+        type=str,
+        help="Título personalizado para a página de saída em HTML."
+    )
+    parser.add_argument(
+        "--html-description",
+        type=str,
+        help="Descrição personalizada para adicionar à saída."
+    )
+    parser.add_argument(
+        "--html-start-compact",
+        action="store_true",
+        help="Usa a visualização compacta por padrão na página de visão geral."
+    )
+    parser.add_argument(
+        "--html-ncbi-context",
+        dest="html_ncbi_context",
+        action="store_true",
+        help="Mostra links para o contexto genômico NCBI dos genes."
+    )
+    parser.add_argument(
+        "--no-html-ncbi-context",
+        dest="html_ncbi_context",
+        action="store_false",
+        help="Não mostra links para o contexto genômico NCBI dos genes."
+    )
+    parser.set_defaults(html_ncbi_context=False)
 
-        # Processa novamente o arquivo .fna parcialmente processado
-        command = f"antismash --clusterhmmer --tigrfam --asf --cc-mibig --cb-general --cb-subclusters --cb-knownclusters --rre --genefinding-tool prodigal {fasta} --fullhmmer --output-dir {result_dir}"
-        os.system(command)
+    # Análises adicionais
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Ativa todas as análises disponíveis no antiSMASH."
+    )
+    parser.add_argument("--fullhmmer", action="store_true", help="Executa análise HMMer em todo o genoma usando perfis Pfam.")
+    parser.add_argument("--cassis", action="store_true", help="Predição baseada em motivos de regiões de clusters de genes de SM.")
+    parser.add_argument("--clusterhmmer", action="store_true", help="Executa análise HMMer limitada a clusters usando perfis Pfam.")
+    parser.add_argument("--tigrfam", action="store_true", help="Anota clusters usando perfis TIGRFam.")
+    parser.add_argument("--asf", action="store_true", help="Executa análise de sítios ativos.")
+    parser.add_argument("--cc-mibig", action="store_true", help="Compara clusters identificados com o banco de dados MIBiG.")
+    parser.add_argument("--cb-general", action="store_true", help="Compara clusters identificados com uma base de dados de clusters preditos pelo antiSMASH.")
+    parser.add_argument("--cb-subclusters", action="store_true", help="Compara clusters identificados com subclusters conhecidos que sintetizam precursores.")
+    parser.add_argument("--cb-knownclusters", action="store_true", help="Compara clusters com clusters conhecidos da base de dados MIBiG.")
+    parser.add_argument("--pfam2go", action="store_true", help="Mapeia Pfam para Gene Ontology.")
+    parser.add_argument("--rre", action="store_true", help="Executa o RREFinder em modo de precisão em todos os clusters de RiPP.")
+    parser.add_argument("--smcog-trees", action="store_true", help="Gera árvores filogenéticas de grupos ortólogos de clusters de metabólitos secundários.")
+    parser.add_argument("--tfbs", action="store_true", help="Executa o localizador de sítios de ligação de fatores de transcrição (TFBS) em todos os clusters.")
+    parser.add_argument("--tta-threshold", type=float, default=0.65, help="Menor conteúdo GC para anotar códons TTA (padrão: 0.65).")
 
-# Processa os arquivos .fna restantes
-for file in os.listdir("."):
-    if file.endswith(".fasta"):
-        fasta = file
-        result_dir = os.path.join(output_dir, "Result_" + fasta)
+    # Opções de previsão de genes
+    parser.add_argument(
+        "--genefinding-tool",
+        choices=["glimmerhmm", "prodigal", "prodigal-m", "none", "error"],
+        default="error",
+        help="Ferramenta de previsão de genes a ser usada (padrão: error)."
+    )
+    parser.add_argument(
+        "--genefinding-gff3",
+        type=str,
+        help="Especifica um arquivo GFF3 para extrair características."
+    )
 
-        # Verifica se o arquivo já foi processado
-        if fasta in processed_files:
-            index_html_path = os.path.join(result_dir, "index.html")
+    # Opções de log
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=DEFAULT_LOG_FILE,
+        help=f"Arquivo de log para salvar mensagens (padrão: {DEFAULT_LOG_FILE})."
+    )
 
-            if os.path.exists(index_html_path):
-                message = f"O arquivo {fasta} já foi processado anteriormente e o index.html existe."
-                save_log(message)
+    args = parser.parse_args()
+
+    # Se o usuário solicitar ajuda do antiSMASH, exiba e saia
+    if args.antismash_help:
+        help_command = ["antismash", "--help"]
+        subprocess.run(help_command)
+        sys.exit()
+
+    # Se --all for especificado, habilita todas as análises adicionais
+    if args.all:
+        args.fullhmmer = True
+        args.cassis = True
+        args.clusterhmmer = True
+        args.tigrfam = True
+        args.asf = True
+        args.cc_mibig = True
+        args.cb_general = True
+        args.cb_subclusters = True
+        args.cb_knownclusters = True
+        args.pfam2go = True
+        args.rre = True
+        args.smcog_trees = True
+        args.tfbs = True
+
+    return args
+
+def setup_logging(log_file):
+    """
+    Configura o módulo de logging para registrar mensagens com timestamps.
+    """
+    logging.basicConfig(
+        filename=log_file,
+        filemode='a',
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        level=logging.INFO,
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    # Também adiciona um handler para exibir as mensagens no console
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', '%Y-%m-%d %H:%M:%S')
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
+
+def main():
+    args = parse_arguments()
+
+    input_dir = Path(args.input_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
+    log_file = Path(args.log_file).resolve()
+
+    # Configura o logging
+    setup_logging(log_file)
+    logging.info("Início do processamento.")
+
+    # Verifica se o diretório de entrada existe
+    if not input_dir.is_dir():
+        logging.error(f"O diretório de entrada '{input_dir}' não existe ou não é um diretório.")
+        sys.exit(1)
+
+    # Cria o diretório de saída se não existir
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(f"Diretório de saída configurado em '{output_dir}'.")
+    except Exception as e:
+        logging.error(f"Erro ao criar o diretório de saída '{output_dir}': {e}")
+        sys.exit(1)
+
+    # Lista todos os arquivos .fna e .fasta no diretório de entrada
+    fna_files = list(input_dir.glob("*.fna")) + list(input_dir.glob("*.fasta"))
+    if not fna_files:
+        logging.warning(f"Nenhum arquivo .fna ou .fasta encontrado no diretório '{input_dir}'.")
+        sys.exit(1)
+
+    logging.info(f"Encontrados {len(fna_files)} arquivos para processamento.")
+
+    # Processa cada arquivo .fna ou .fasta
+    for fasta_path in fna_files:
+        fasta = fasta_path.name
+        # Remove a extensão do arquivo para nomear o diretório de resultados
+        fasta_stem = fasta_path.stem
+        # Se o arquivo tiver múltiplas extensões, como .tar.gz, .fasta.gz, etc., use .name.replace
+        # Aqui assumimos uma única extensão (.fna ou .fasta)
+        result_dir = output_dir / f"Result_{fasta_stem}"
+
+        index_html_path = result_dir / "index.html"
+
+        # Verifica se o diretório de resultados já existe
+        if result_dir.exists():
+            if index_html_path.exists():
+                logging.info(f"O arquivo '{fasta}' já foi processado anteriormente e o 'index.html' existe. Pulando.")
                 continue
+            else:
+                logging.warning(f"O arquivo '{fasta}' foi parcialmente processado anteriormente e o 'index.html' está faltando. Refazendo o processamento.")
+                try:
+                    shutil.rmtree(result_dir)
+                    logging.info(f"Diretório '{result_dir}' removido para reprocessamento.")
+                except Exception as e:
+                    logging.error(f"Erro ao remover o diretório '{result_dir}': {e}")
+                    continue
 
-        # Processa o arquivo .fna se ainda não foi processado completamente
-        if not os.path.exists(result_dir):
-            os.mkdir(result_dir)
-            command = f"antismash --clusterhmmer --tigrfam --asf --cc-mibig --cb-general --cb-subclusters --cb-knownclusters --rre --genefinding-tool prodigal {fasta} --fullhmmer --output-dir {result_dir}"
-            os.system(command)
-            message = f"Processado o arquivo {fasta}."
-            save_log(message)
+        # Cria o diretório de resultados
+        try:
+            result_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Diretório de resultados criado: '{result_dir}'.")
+        except Exception as e:
+            logging.error(f"Erro ao criar o diretório '{result_dir}': {e}")
+            continue
+
+        # Ajusta a taxonomia se a ferramenta de previsão de genes for glimmerhmm
+        taxon = args.taxon  # Inicializa com o valor fornecido
+        if args.genefinding_tool == "glimmerhmm":
+            taxon = "fungi"
+            logging.info("Ferramenta de previsão de genes 'glimmerhmm' selecionada. Ajustando taxonomia para 'fungi'.")
+
+        # Monta o comando antiSMASH
+        command = [
+            "antismash",
+            str(fasta_path),
+            "--taxon", taxon,
+            "--cpus", str(args.cpus),
+            "--databases", args.databases,
+            "--output-dir", str(result_dir)
+        ]
+
+        # Adiciona opções de saída
+        if args.output_basename:
+            command += ["--output-basename", args.output_basename]
+        if args.html_title:
+            command += ["--html-title", args.html_title]
+        if args.html_description:
+            command += ["--html-description", args.html_description]
+        if args.html_start_compact:
+            command.append("--html-start-compact")
+        if args.html_ncbi_context:
+            command.append("--html-ncbi-context")
+        else:
+            command.append("--no-html-ncbi-context")
+
+        # Adiciona análises adicionais
+        if args.fullhmmer:
+            command.append("--fullhmmer")
+        if args.cassis:
+            command.append("--cassis")
+        if args.clusterhmmer:
+            command.append("--clusterhmmer")
+        if args.tigrfam:
+            command.append("--tigrfam")
+        if args.asf:
+            command.append("--asf")
+        if args.cc_mibig:
+            command.append("--cc-mibig")
+        if args.cb_general:
+            command.append("--cb-general")
+        if args.cb_subclusters:
+            command.append("--cb-subclusters")
+        if args.cb_knownclusters:
+            command.append("--cb-knownclusters")
+        if args.pfam2go:
+            command.append("--pfam2go")
+        if args.rre:
+            command.append("--rre")
+        if args.smcog_trees:
+            command.append("--smcog-trees")
+        if args.tfbs:
+            command.append("--tfbs")
+        if args.tta_threshold:
+            command += ["--tta-threshold", str(args.tta_threshold)]
+
+        # Adiciona opções de previsão de genes
+        command += ["--genefinding-tool", args.genefinding_tool]
+        if args.genefinding_gff3:
+            command += ["--genefinding-gff3", args.genefinding_gff3]
+
+        # Executa o comando antiSMASH
+        try:
+            logging.info(f"Iniciando o processamento do arquivo '{fasta}' com antiSMASH.")
+            subprocess.run(command, check=True)
+            logging.info(f"Processado o arquivo '{fasta}' com sucesso.")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Erro ao processar o arquivo '{fasta}': {e}")
+            continue
+        except Exception as e:
+            logging.error(f"Erro inesperado ao processar o arquivo '{fasta}': {e}")
+            continue
+
+    logging.info("Processamento concluído.")
+
+if __name__ == "__main__":
+    main()
+
