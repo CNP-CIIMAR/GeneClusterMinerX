@@ -19,7 +19,7 @@ import logging
 import sys
 
 # Diretório de saída e arquivo de log padrão
-DEFAULT_LOG_FILE = "log.txt"
+DEFAULT_LOG_FILE = "logs.txt"
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -218,13 +218,15 @@ def main():
 
     logging.info(f"Encontrados {len(fna_files)} arquivos para processamento.")
 
+    # Inicializa contadores
+    success_count = 0
+    failure_count = 0
+
     # Processa cada arquivo .fna ou .fasta
     for fasta_path in fna_files:
         fasta = fasta_path.name
         # Remove a extensão do arquivo para nomear o diretório de resultados
         fasta_stem = fasta_path.stem
-        # Se o arquivo tiver múltiplas extensões, como .tar.gz, .fasta.gz, etc., use .name.replace
-        # Aqui assumimos uma única extensão (.fna ou .fasta)
         result_dir = output_dir / f"Result_{fasta_stem}"
 
         index_html_path = result_dir / "index.html"
@@ -241,6 +243,7 @@ def main():
                     logging.info(f"Diretório '{result_dir}' removido para reprocessamento.")
                 except Exception as e:
                     logging.error(f"Erro ao remover o diretório '{result_dir}': {e}")
+                    failure_count += 1
                     continue
 
         # Cria o diretório de resultados
@@ -249,6 +252,7 @@ def main():
             logging.info(f"Diretório de resultados criado: '{result_dir}'.")
         except Exception as e:
             logging.error(f"Erro ao criar o diretório '{result_dir}': {e}")
+            failure_count += 1
             continue
 
         # Ajusta a taxonomia se a ferramenta de previsão de genes for glimmerhmm
@@ -325,16 +329,28 @@ def main():
             logging.info(f"Iniciando o processamento do arquivo '{fasta}' com antiSMASH.")
             subprocess.run(command, check=True)
             logging.info(f"Processado o arquivo '{fasta}' com sucesso.")
+            success_count += 1
         except subprocess.CalledProcessError as e:
             logging.error(f"Erro ao processar o arquivo '{fasta}': {e}")
+            failure_count += 1
             continue
         except Exception as e:
             logging.error(f"Erro inesperado ao processar o arquivo '{fasta}': {e}")
+            failure_count += 1
             continue
 
+    # Finaliza o processamento com um resumo
     logging.info("Processamento concluído.")
+    logging.info(f"Total de genomas processados com sucesso: {success_count}")
+    logging.info(f"Total de genomas que falharam no processamento: {failure_count}")
+
+    # Opcional: Exibe o resumo no console
+    print("\nResumo do Processamento:")
+    print(f"Total de genomas processados com sucesso: {success_count}")
+    print(f"Total de genomas que falharam no processamento: {failure_count}")
 
 if __name__ == "__main__":
     main()
+
 
 
