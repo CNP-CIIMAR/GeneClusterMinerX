@@ -1,9 +1,9 @@
 # GeneClusterMineX v 2.0 :rocket:
 _____________________________________________________________________________________________________________________________________________________
 
- - **v 1.0.0: automation of processing of several Genomes fasta/fna files by antismash**
+ - **v 2.0.0: automation of processing of several Genomes fasta/fna files by antismash**
 
-GeneClusterMineXv1.0.0.py
+GeneClusterMineXv2.0.0.py
 
 ## Automated Secondary Metabolite Analysis with antiSMASH
 **run_antismash.py is a Python script designed to streamline the execution of antiSMASH on multiple sequence files (.fna or .fasta) within a directory. The script automates the creation of output directories for each input file, manages detailed logs, and offers flexibility to customize analyses according to user needs.**
