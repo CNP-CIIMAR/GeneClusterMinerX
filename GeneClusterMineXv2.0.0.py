@@ -5,7 +5,7 @@
 Autor: Leandro de Mattos Pereira
 Junior Researcher, CNP Laboratory
 Pedro Leao - Team Leader
-Data: Junho, 06, 2023 (Atualizado: 10 outubro, 2024)
+Data: Junho, 06, 2023 (Atualizado: Outubro, 03, 2024)
 Descrição: Script para executar antiSMASH em múltiplos arquivos .fna ou .fasta dentro de um diretório,
          gerando um diretório de resultados para cada arquivo de entrada.
 """
@@ -285,7 +285,11 @@ def main():
         if args.fullhmmer:
             command.append("--fullhmmer")
         if args.cassis:
-            command.append("--cassis")
+            # Verifica se a ferramenta de previsão de genes é 'prodigal'
+            if args.genefinding_tool == "prodigal":
+                logging.warning("CASSIS desativado porque a ferramenta de previsão de genes é 'prodigal'.")
+            else:
+                command.append("--cassis")
         if args.clusterhmmer:
             command.append("--clusterhmmer")
         if args.tigrfam:
@@ -332,4 +336,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
