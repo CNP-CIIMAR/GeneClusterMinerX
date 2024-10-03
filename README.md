@@ -47,10 +47,14 @@ Comprehensive Logging: Records detailed logs for each processing step, including
 ## Usage
 - Directory Structure
 Input Directory (input_dir): Contains all .fna or .fasta files you wish to analyze.
+
+```bash
 ./fna_inputs/
 ├── sample1.fna
 ├── sample2.fasta
 └── ...
+
+```
 
 ## Output Directory (output_dir): Where the results will be stored. Each input file will have its own results subdirectory.
 
