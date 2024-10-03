@@ -1,4 +1,4 @@
-# GeneClusterMineX v 1.0.0 :rocket:
+# GeneClusterMineX v 2.0 :rocket:
 _____________________________________________________________________________________________________________________________________________________
 
  - **v 1.0.0: automation of processing of several Genomes fasta/fna files by antismash**
