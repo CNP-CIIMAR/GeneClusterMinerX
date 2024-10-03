@@ -86,11 +86,11 @@ nohup python ./GeneClusterMineXv1.0.0.py ./ ./output_antismash/ --all --cpus 8 -
 ```
 
 
-<input_dir>: Path to the directory containing .fna or .fasta files.
-<output_dir>: Path to the directory where results will be saved.
---all: All available tools will be used.
---cpus 8: 8 CPUs will be used.
---genefinding-tool glimmerhmm: The GlimmerHMM tool will be used.
+- <input_dir>: Path to the directory containing .fna or .fasta files.
+- <output_dir>: Path to the directory where results will be saved.
+- --all: All available tools will be used.
+- --cpus 8: 8 CPUs will be used.
+- --genefinding-tool glimmerhmm: The GlimmerHMM tool will be used.
   
 
 
