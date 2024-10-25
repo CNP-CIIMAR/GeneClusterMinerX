@@ -1,11 +1,12 @@
 import os
 import shutil
 import subprocess
+import multiprocessing
 
 output_dir = "./output_antismash"
 log_file = "log.txt"
 
-# Verifica se o diretório de saída existe, caso contrário, usa o existente
+# Verifica se o diretório de saída existe, caso contrário, cria-o
 if not os.path.exists(output_dir):
     try:
         os.mkdir(output_dir)
@@ -20,11 +21,15 @@ def adjust_permissions(directory):
     command = f"sudo chmod -R u+rwX {directory}"
     subprocess.run(command, shell=True, check=True)
 
+# Cria um Lock para sincronizar o acesso ao arquivo de log
+log_lock = multiprocessing.Lock()
+
 # Função para salvar as mensagens no arquivo de log
 def save_log(message):
-    with open(log_file, "a") as f:
-        f.write(message + "\n")
-        f.flush()  # Garante que o conteúdo seja gravado no arquivo imediatamente
+    with log_lock:
+        with open(log_file, "a") as f:
+            f.write(message + "\n")
+            f.flush()  # Garante que o conteúdo seja gravado no arquivo imediatamente
 
 # Função para rodar o antismash no ambiente Conda correto e capturar as saídas
 def run_antismash(fasta, result_dir):
@@ -40,9 +45,11 @@ def run_antismash(fasta, result_dir):
 
         # Leitura da saída em tempo real
         for stdout_line in iter(process.stdout.readline, ""):
-            save_log(stdout_line.strip())  # Escreve cada linha de stdout no log
+            if stdout_line:
+                save_log(stdout_line.strip())  # Escreve cada linha de stdout no log
         for stderr_line in iter(process.stderr.readline, ""):
-            save_log(stderr_line.strip())  # Escreve cada linha de stderr no log
+            if stderr_line:
+                save_log(stderr_line.strip())  # Escreve cada linha de stderr no log
 
         process.stdout.close()
         process.stderr.close()
@@ -55,58 +62,56 @@ def run_antismash(fasta, result_dir):
     except subprocess.CalledProcessError as e:
         save_log(f"Erro ao processar o arquivo {fasta}: {e}")
 
-# Definir a variável processed_files como um conjunto vazio
-processed_files = set()
-
-# Ajustar permissões apenas uma vez
-adjust_permissions(output_dir)
-
-# Verifica os arquivos já processados
-for result_dir in os.listdir(output_dir):
-    if result_dir.startswith("Result_") and os.path.isdir(os.path.join(output_dir, result_dir)):
-        fasta_file = result_dir.replace("Result_", "")
-        processed_files.add(fasta_file)
-
-# Processa o arquivo .fna que não foi completamente processado
-for fasta in processed_files:
+# Função que processa um único arquivo .fna
+def process_file(fasta):
     result_dir = os.path.join(output_dir, "Result_" + fasta)
     index_html_path = os.path.join(result_dir, "index.html")
 
-    if not os.path.exists(index_html_path):
-        message = f"O arquivo {fasta} foi parcialmente processado anteriormente e o index.html está faltando. Refazendo o processamento."
+    # Verifica se o arquivo já foi processado completamente
+    if os.path.exists(index_html_path):
+        message = f"O arquivo {fasta} já foi processado anteriormente e o index.html existe."
         save_log(message)
-        
-        # Verifica se o diretório existe antes de removê-lo
-        if os.path.exists(result_dir):
-            shutil.rmtree(result_dir)  # Remove o diretório
+        return
 
-        # Processa novamente o arquivo .fna parcialmente processado
-        run_antismash(fasta, result_dir)
-        message = f"Reprocessado o arquivo {fasta}."
-        save_log(message)
+    # Remove diretórios parcialmente processados
+    if os.path.exists(result_dir):
+        shutil.rmtree(result_dir)
+        save_log(f"Removido diretório parcialmente processado: {result_dir}")
 
-# Processa os arquivos .fna restantes
-for file in os.listdir("."):
-    if file.endswith(".fna"):
-        fasta = file
-        result_dir = os.path.join(output_dir, "Result_" + fasta)
+    # Cria o diretório de resultado
+    os.mkdir(result_dir)
+    
+    # Executa o antismash para o arquivo
+    run_antismash(fasta, result_dir)
+    message = f"Processado o arquivo {fasta}."
+    save_log(message)
 
-        # Verifica se o arquivo já foi processado
-        if fasta in processed_files:
-            index_html_path = os.path.join(result_dir, "index.html")
+if __name__ == "__main__":
+    # Ajustar permissões apenas uma vez
+    adjust_permissions(output_dir)
 
+    # Lista todos os arquivos .fna
+    all_fna_files = [file for file in os.listdir(".") if file.endswith(".fna")]
+
+    # Identifica os arquivos já processados completamente
+    processed_files = set()
+    for result_dir_name in os.listdir(output_dir):
+        if result_dir_name.startswith("Result_") and os.path.isdir(os.path.join(output_dir, result_dir_name)):
+            fasta_file = result_dir_name.replace("Result_", "")
+            index_html_path = os.path.join(output_dir, result_dir_name, "index.html")
             if os.path.exists(index_html_path):
-                message = f"O arquivo {fasta} já foi processado anteriormente e o index.html existe."
-                save_log(message)
-                continue
+                processed_files.add(fasta_file)
+            else:
+                # Remove diretórios parcialmente processados
+                shutil.rmtree(os.path.join(output_dir, result_dir_name))
+                save_log(f"Removido diretório parcialmente processado: {result_dir_name}")
 
-        # Verifica se o diretório já existe antes de criá-lo
-        if not os.path.exists(result_dir):
-            os.mkdir(result_dir)
-        else:
-            save_log(f"Diretório {result_dir} já existe. Continuando...")
-        
-        run_antismash(fasta, result_dir)
-        message = f"Processado o arquivo {fasta}."
-        save_log(message)
+    # Determina os arquivos que precisam ser processados
+    files_to_process = [f for f in all_fna_files if f not in processed_files]
 
+    # Define o número de processos paralelos (ajustado para 80)
+    num_processes = 80  # <-- Aqui você define para 80 processos
+
+    # Cria um pool de processos para processar os arquivos em paralelo
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        pool.map(process_file, files_to_process)
