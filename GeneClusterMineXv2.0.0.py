@@ -7,7 +7,7 @@ Junior Researcher, CNP Laboratory
 Pedro Leao - Team Leader
 Data: Junho, 06, 2023 (Atualizado: Outubro, 03, 2024)
 Descrição: Script para executar antiSMASH em múltiplos arquivos .fna ou .fasta dentro de um diretório,
-         gerando um diretório de resultados para cada arquivo de entrada.
+           gerando um diretório de resultados para cada arquivo de entrada, com suporte a processamento paralelo.
 """
 
 import os
@@ -17,6 +17,8 @@ import subprocess
 from pathlib import Path
 import logging
 import sys
+import multiprocessing
+from functools import partial
 
 # Diretório de saída e arquivo de log padrão
 DEFAULT_LOG_FILE = "logs.txt"
@@ -56,7 +58,7 @@ def parse_arguments():
         "-c", "--cpus",
         type=int,
         default=4,  # Valor padrão ajustado para 4, pode ser alterado conforme a necessidade
-        help="Número de CPUs a serem usadas em paralelo (padrão: 4)."
+        help="Número de CPUs a serem usadas em paralelo pelo antiSMASH (padrão: 4)."
     )
     parser.add_argument(
         "--databases",
@@ -142,6 +144,14 @@ def parse_arguments():
         help=f"Arquivo de log para salvar mensagens (padrão: {DEFAULT_LOG_FILE})."
     )
 
+    # Opção para definir o número de processos paralelos
+    parser.add_argument(
+        "--parallel-processes",
+        type=int,
+        default=4,
+        help="Número de processos paralelos para executar o antiSMASH em diferentes arquivos (padrão: 4)."
+    )
+
     args = parser.parse_args()
 
     # Se o usuário solicitar ajuda do antiSMASH, exiba e saia
@@ -186,80 +196,51 @@ def setup_logging(log_file):
     console.setFormatter(formatter)
     logging.getLogger('').addHandler(console)
 
-def main():
-    args = parse_arguments()
-
-    input_dir = Path(args.input_dir).resolve()
-    output_dir = Path(args.output_dir).resolve()
-    log_file = Path(args.log_file).resolve()
-
-    # Configura o logging
-    setup_logging(log_file)
-    logging.info("Início do processamento.")
-
-    # Verifica se o diretório de entrada existe
-    if not input_dir.is_dir():
-        logging.error(f"O diretório de entrada '{input_dir}' não existe ou não é um diretório.")
-        sys.exit(1)
-
-    # Cria o diretório de saída se não existir
+def process_file(fasta_path, args, lock):
+    """
+    Processa um único arquivo fasta usando o antiSMASH.
+    """
     try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        logging.info(f"Diretório de saída configurado em '{output_dir}'.")
-    except Exception as e:
-        logging.error(f"Erro ao criar o diretório de saída '{output_dir}': {e}")
-        sys.exit(1)
-
-    # Lista todos os arquivos .fna e .fasta no diretório de entrada
-    fna_files = list(input_dir.glob("*.fna")) + list(input_dir.glob("*.fasta"))
-    if not fna_files:
-        logging.warning(f"Nenhum arquivo .fna ou .fasta encontrado no diretório '{input_dir}'.")
-        sys.exit(1)
-
-    logging.info(f"Encontrados {len(fna_files)} arquivos para processamento.")
-
-    # Inicializa contadores
-    success_count = 0
-    failure_count = 0
-
-    # Processa cada arquivo .fna ou .fasta
-    for fasta_path in fna_files:
         fasta = fasta_path.name
         # Remove a extensão do arquivo para nomear o diretório de resultados
         fasta_stem = fasta_path.stem
-        result_dir = output_dir / f"Result_{fasta_stem}"
-
+        result_dir = args.output_dir / f"Result_{fasta_stem}"
         index_html_path = result_dir / "index.html"
 
         # Verifica se o diretório de resultados já existe
         if result_dir.exists():
             if index_html_path.exists():
-                logging.info(f"O arquivo '{fasta}' já foi processado anteriormente e o 'index.html' existe. Pulando.")
-                continue
+                with lock:
+                    logging.info(f"O arquivo '{fasta}' já foi processado anteriormente e o 'index.html' existe. Pulando.")
+                return (fasta, "já processado")
             else:
-                logging.warning(f"O arquivo '{fasta}' foi parcialmente processado anteriormente e o 'index.html' está faltando. Refazendo o processamento.")
+                with lock:
+                    logging.warning(f"O arquivo '{fasta}' foi parcialmente processado anteriormente e o 'index.html' está faltando. Refazendo o processamento.")
                 try:
                     shutil.rmtree(result_dir)
-                    logging.info(f"Diretório '{result_dir}' removido para reprocessamento.")
+                    with lock:
+                        logging.info(f"Diretório '{result_dir}' removido para reprocessamento.")
                 except Exception as e:
-                    logging.error(f"Erro ao remover o diretório '{result_dir}': {e}")
-                    failure_count += 1
-                    continue
+                    with lock:
+                        logging.error(f"Erro ao remover o diretório '{result_dir}': {e}")
+                    return (fasta, "falha")
 
         # Cria o diretório de resultados
         try:
             result_dir.mkdir(parents=True, exist_ok=True)
-            logging.info(f"Diretório de resultados criado: '{result_dir}'.")
+            with lock:
+                logging.info(f"Diretório de resultados criado: '{result_dir}'.")
         except Exception as e:
-            logging.error(f"Erro ao criar o diretório '{result_dir}': {e}")
-            failure_count += 1
-            continue
+            with lock:
+                logging.error(f"Erro ao criar o diretório '{result_dir}': {e}")
+            return (fasta, "falha")
 
         # Ajusta a taxonomia se a ferramenta de previsão de genes for glimmerhmm
         taxon = args.taxon  # Inicializa com o valor fornecido
         if args.genefinding_tool == "glimmerhmm":
             taxon = "fungi"
-            logging.info("Ferramenta de previsão de genes 'glimmerhmm' selecionada. Ajustando taxonomia para 'fungi'.")
+            with lock:
+                logging.info("Ferramenta de previsão de genes 'glimmerhmm' selecionada. Ajustando taxonomia para 'fungi'.")
 
         # Monta o comando antiSMASH
         command = [
@@ -291,7 +272,8 @@ def main():
         if args.cassis:
             # Verifica se a ferramenta de previsão de genes é 'prodigal'
             if args.genefinding_tool == "prodigal":
-                logging.warning("CASSIS desativado porque a ferramenta de previsão de genes é 'prodigal'.")
+                with lock:
+                    logging.warning("CASSIS desativado porque a ferramenta de previsão de genes é 'prodigal'.")
             else:
                 command.append("--cassis")
         if args.clusterhmmer:
@@ -326,31 +308,89 @@ def main():
 
         # Executa o comando antiSMASH
         try:
-            logging.info(f"Iniciando o processamento do arquivo '{fasta}' com antiSMASH.")
+            with lock:
+                logging.info(f"Iniciando o processamento do arquivo '{fasta}' com antiSMASH.")
             subprocess.run(command, check=True)
-            logging.info(f"Processado o arquivo '{fasta}' com sucesso.")
-            success_count += 1
+            with lock:
+                logging.info(f"Processado o arquivo '{fasta}' com sucesso.")
+            return (fasta, "sucesso")
         except subprocess.CalledProcessError as e:
-            logging.error(f"Erro ao processar o arquivo '{fasta}': {e}")
-            failure_count += 1
-            continue
+            with lock:
+                logging.error(f"Erro ao processar o arquivo '{fasta}': {e}")
+            return (fasta, "falha")
         except Exception as e:
-            logging.error(f"Erro inesperado ao processar o arquivo '{fasta}': {e}")
-            failure_count += 1
-            continue
+            with lock:
+                logging.error(f"Erro inesperado ao processar o arquivo '{fasta}': {e}")
+            return (fasta, "falha")
+    except Exception as e:
+        with lock:
+            logging.error(f"Erro inesperado no processamento do arquivo '{fasta_path}': {e}")
+        return (fasta_path.name, "falha")
+
+def main():
+    args = parse_arguments()
+
+    input_dir = Path(args.input_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
+    log_file = Path(args.log_file).resolve()
+    args.output_dir = output_dir  # Atualiza args.output_dir para ser um Path
+
+    # Configura o logging
+    setup_logging(log_file)
+    logging.info("Início do processamento.")
+
+    # Verifica se o diretório de entrada existe
+    if not input_dir.is_dir():
+        logging.error(f"O diretório de entrada '{input_dir}' não existe ou não é um diretório.")
+        sys.exit(1)
+
+    # Cria o diretório de saída se não existir
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(f"Diretório de saída configurado em '{output_dir}'.")
+    except Exception as e:
+        logging.error(f"Erro ao criar o diretório de saída '{output_dir}': {e}")
+        sys.exit(1)
+
+    # Lista todos os arquivos .fna e .fasta no diretório de entrada
+    fna_files = list(input_dir.glob("*.fna")) + list(input_dir.glob("*.fasta"))
+    if not fna_files:
+        logging.warning(f"Nenhum arquivo .fna ou .fasta encontrado no diretório '{input_dir}'.")
+        sys.exit(1)
+
+    logging.info(f"Encontrados {len(fna_files)} arquivos para processamento.")
+
+    # Inicializa contadores
+    manager = multiprocessing.Manager()
+    lock = manager.Lock()
+    results = []
+
+    # Prepara a função parcial para multiprocessing
+    process_file_partial = partial(process_file, args=args, lock=lock)
+
+    # Define o número de processos paralelos
+    num_processes = args.parallel_processes
+
+    # Cria um pool de processos
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        results = pool.map(process_file_partial, fna_files)
+
+    # Calcula o resumo
+    success_count = sum(1 for _, status in results if status == "sucesso")
+    failure_count = sum(1 for _, status in results if status == "falha")
+    already_processed_count = sum(1 for _, status in results if status == "já processado")
 
     # Finaliza o processamento com um resumo
     logging.info("Processamento concluído.")
     logging.info(f"Total de genomas processados com sucesso: {success_count}")
     logging.info(f"Total de genomas que falharam no processamento: {failure_count}")
+    logging.info(f"Total de genomas já processados anteriormente: {already_processed_count}")
 
     # Opcional: Exibe o resumo no console
     print("\nResumo do Processamento:")
     print(f"Total de genomas processados com sucesso: {success_count}")
     print(f"Total de genomas que falharam no processamento: {failure_count}")
+    print(f"Total de genomas já processados anteriormente: {already_processed_count}")
 
 if __name__ == "__main__":
     main()
-
-
-
