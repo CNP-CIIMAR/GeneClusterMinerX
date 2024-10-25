@@ -82,13 +82,14 @@ After running the script, the output directory will be organized as follows:
 ## How to run GeneClusterMinerX for all available tools:
 
 ```shell
-nohup python ./GeneClusterMineXv1.0.0.py ./ ./output_antismash/ --all --cpus 8 --genefinding-tool glimmerhmm  > run_output2.log 3>&1 &
+nohup python ./GeneClusterMineXv2.0.0.py ./meus_genomas ./output_antismash/ --parallel-processes 80 --all --cpus 8
 ```
 
 
 - <input_dir>: Path to the directory containing .fna or .fasta files.
 - <output_dir>: Path to the directory where results will be saved.
 - --all: All available tools will be used.
+- --parallel-processes 80 fasta files will be processed at same time 
 - --cpus 8: 8 CPUs will be used.
 - --genefinding-tool glimmerhmm: The GlimmerHMM tool will be used.
   
