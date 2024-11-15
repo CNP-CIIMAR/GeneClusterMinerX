@@ -223,7 +223,7 @@ Contributions and suggestions are welcome! Feel free to open an issue or submit 
 -  antiSMASH 7.0: new and improved predictions for detection, regulation, chemical structures, and visualisation
    Kai Blin, Simon Shaw, Hannah E Augustijn, Zachary L Reitz, Friederike Biermann, Mohammad Alanjary, Artem Fetter, Barbara R Terlouw, William W. Metcalf, Eric JN 
    Helfrich, Gilles P van Wezel, Marnix. H Medema & Tilmann Weber. Nucleic Acids Research (2023) doi: 10.1093/nar/gkad344.
--  If GeneClusterMinerX was useful, please give credit to this repository and the authors: Leandro de Mattos Pereira and Pedro Leão.
+-  If GeneClusterMinerX was useful, please give credit to this repository (CNP-CIIMAR) and the authors: Leandro de Mattos Pereira and Pedro Leão.
 
   ## More about - Authors:
 
