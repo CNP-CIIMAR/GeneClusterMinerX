@@ -82,7 +82,7 @@ After running the script, the output directory will be organized as follows:
 ## How to run GeneClusterMinerX for all available tools:
 
 ```shell
-nohup python ./GeneClusterMineXv2.0.0.py ./meus_genomas ./output_antismash/ --parallel-processes 80 --all --cpus 8
+nohup python3 antismash.py --genefinding-tool prodigal ./ output_antismash  --parallel-processes 138 --all --cpus 111 &
 ```
 
 
